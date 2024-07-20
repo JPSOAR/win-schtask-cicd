@@ -1,0 +1,42 @@
+name: Deploy to Windows Server
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build
+    runs-on: self-hosted
+    env:
+      WIN_HOSTNAME: ${{ secrets.WIN_HOSTNAME }}
+      WIN_USER: ${{ secrets.WIN_USER }}
+      WIN_PW: ${{ secrets.WIN_PW }}
+      WIN_GH_ACTIONS_PATH: ${{ secrets.WIN_GH_ACTIONS_PATH }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Copy files to Windows Share
+        run: |
+          echo "$WIN_PW" | sudo -S mkdir -p /mnt/githubactions
+          echo "$WIN_PW" | sudo -S mount -t cifs //$WIN_HOSTNAME/githubactions /mnt/githubactions -o username=$WIN_USER,password=$WIN_PW
+          echo "$WIN_PW" | sudo -S rsync -av --delete --exclude=".*" ./ /mnt/githubactions/win-schtask-cicd
+          echo "$WIN_PW" | sudo -S umount /mnt/githubactions
+          echo "$WIN_PW" | sudo -S rmdir /mnt/githubactions
+      - name: Set Repo Name
+        id: repo_name
+        run: echo "REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)" >> $GITHUB_ENV
+      - name: Debug Repo Name
+        run: echo "Repo Name is $REPO_NAME"
+      - name: Debug WIN_HOSTNAME
+        run: echo "WIN_HOSTNAME is $WIN_HOSTNAME"
+      - name: Test SSH Connection
+        run: |
+          ssh $WIN_USER@$WIN_HOSTNAME << EOF
+          hostname
+          Powershell -f $WIN_GH_ACTIONS_PATH\\$REPO_NAME\\setup\\VenvSetup.ps1 -schtask_path $WIN_GH_ACTIONS_PATH\\$REPO_NAME
+          Powershell -f $WIN_GH_ACTIONS_PATH\\$REPO_NAME\\setup\\CreateTasks.ps1 -scriptpath $WIN_GH_ACTIONS_PATH\\$REPO_NAME\\Scripts -sctaskuser $WIN_USER -sctaskpw $WIN_PW
+          EOF
+
+          
